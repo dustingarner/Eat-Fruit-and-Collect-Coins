@@ -2,6 +2,8 @@ import pygame
 import fortune.collision as collision
 import fortune.items as items
 import fortune.utils as utils
+import fortune.animation as animation
+import fortune.observer as observer
 
 class Player:
     def __init__(self):
@@ -10,6 +12,11 @@ class Player:
         self.hitbox = collision.Hitbox(self.position, self.scale)
         self.color = utils.hex_to_color("8338EC")
         self.speed = 300
+
+        self.frame = 0
+        self.animation = animation.AnimInfo("Character.png", (11, 1))
+
+        self.consume_subject = observer.Subject()
     
     def move(self, delta):
         keys = pygame.key.get_pressed()
