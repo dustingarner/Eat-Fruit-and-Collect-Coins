@@ -17,6 +17,9 @@ class Animation:
         self.frame_width = math.floor(self.image_info.width / self.anim_info.frame_count[0])
         self.frame_height = math.floor(self.image_info.height / self.anim_info.frame_count[1])
         self.sprite_sheet = pygame.image.load(self.anim_info.file).convert()
+        
+        self.counter = 0
+        self.frame = 0
 
     def get_image(self, frame: tuple) -> pygame.Surface:
         rect_location = (self.frame_width * frame[0], self.frame_height * frame[1])
@@ -24,5 +27,16 @@ class Animation:
         image = pygame.Surface(rect_size).convert()
         image.blit(self.sprite_sheet, (0, 0), (rect_location, rect_size))
         image.set_colorkey((0,0,0,0))
+        return image
+    
+    def animate(self, delta: float) -> pygame.Surface:
+        image = self.get_image((self.frame, 0))
+
+        if self.counter * delta > 0.05:
+            self.counter = 0
+            self.frame += 1
+        if self.frame >= self.anim_info.frame_count[0]:
+            self.frame = 0
+        self.counter += 1
         return image
 

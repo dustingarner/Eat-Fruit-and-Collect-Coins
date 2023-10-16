@@ -1,49 +1,62 @@
 import random
+from enum import Enum
 import pygame
 import fortune.collision as collision
 import fortune.animation as animation
 import fortune.utils as utils
+import fortune.observer as observer
 
-class ItemAdder:
-    def __init__(self, frequency_range: tuple):
-        self.prev_added = 0
+
+
+class ItemAdder:    
+    def __init__(self, item_type, frequency_range: tuple, screen, screen_size):
+        self.item_type = item_type
+        self.item_list = []
         self.frequency_range = frequency_range
-        self.next_add = self.compute_next_add()
-    
-    def can_add(self, frame_count) -> bool:
-        if not (frame_count - self.prev_added) % self.next_add == 0:
-            return False
-        self.prev_added = frame_count
-        self.next_add = self.compute_next_add()
-        return True
+        self.screen = screen
+        self.screen_size = screen_size
 
-    def compute_next_add(self) -> int:
+        self.WAIT_SPEED = 200
+        self.wait_counter = 0
+        self.wait_time = 0
+        self.reset_wait()
+
+        self.remover = observer.Observer(self.remove_item)
+
+
+    def reset_wait(self) -> int:
+        self.wait_counter = 0
         random.seed()
-        return random.randint(self.frequency_range[0], self.frequency_range[1])
+        self.wait_time = random.randint(self.frequency_range[0], self.frequency_range[1])
     
-    def reset_counter(self, frame_count):
-        self.prev_added -= frame_count
-        self.next_add -= frame_count
+    def add_item(self):
+        new_item = self.item_type(self.screen, self.screen_size)
+        self.item_list.append(new_item)
+        new_item.remove_subject.add_observer(self)
+        self.reset_wait()
 
-class Coin:
-    def __init__(self, screen_size):
-        self.color = utils.hex_to_color("FFBE0B")
-        self.boundary = 50
-        self.radius = 6
-        
-        self.position = self.randomize_position(screen_size)
-        self.direction = self.randomize_direction(screen_size)
-        self.speed = self.randomize_speed()
-        self.hitcircle = collision.Hitcircle(self.position, self.radius)
+    def can_add(self) -> bool:
+        return self.wait_counter >= self.wait_time
+
+    def remove_item(self, item):
+        if item in self.item_list:
+            self.item_list.remove(item)
+        del item
+
+    def process(self, delta) -> bool:
+        if self.can_add():
+            self.add_item()
+            return
+        self.wait_counter += self.WAIT_SPEED * delta
+
+
+
+class MovementDirection:
+    def __init__(self, position, screen_size):
+        self.position = position
+        self.direction = self.make_direction(screen_size)
     
-    def randomize_position(self, screen_size) -> pygame.Vector2:
-        random.seed()
-        position = pygame.Vector2()
-        position.x = random.randint(self.boundary, screen_size.x - self.boundary)
-        position.y = random.randint(self.boundary, screen_size.y - self.boundary)
-        return position
-
-    def randomize_direction(self, screen_size) -> pygame.Vector2:
+    def make_direction(self, screen_size) -> pygame.Vector2:
         random.seed()
         direction = pygame.Vector2()
         if self.position.x > screen_size.x / 2:
@@ -59,38 +72,75 @@ class Coin:
         direction = direction.rotate(offset)
         return direction
 
+
+
+class Coin:
+    def __init__(self, screen, screen_size):
+        self.screen = screen
+        self.screen_size = screen_size
+        self.color = utils.hex_to_color("FFBE0B")
+        self.boundary = 50
+        self.radius = 6
+        
+        self.position = self.randomize_position(screen_size)
+        self.direction = MovementDirection(position = self.position, screen_size = self.screen_size)
+        self.speed = self.randomize_speed()
+        self.hitcircle = collision.Hitcircle(self.position, self.radius)
+
+        self.remove_subject = observer.Subject()
+    
+    def randomize_position(self) -> pygame.Vector2:
+        random.seed()
+        position = pygame.Vector2()
+        position.x = random.randint(self.boundary, self.screen_size.x - self.boundary)
+        position.y = random.randint(self.boundary, self.screen_size.y - self.boundary)
+        return position
+
     def randomize_speed(self) -> int:
         random.seed()
         return random.randint(50, 100)
 
-    def off_screen(self, screen_size) -> bool:
-        if self.position.x - self.radius > screen_size.x:
+    def remove_self(self):
+        self.remove_subject.notify(self)
+
+
+    def off_screen(self) -> bool:
+        if self.position.x - self.radius > self.screen_size.x:
             return True
         elif self.position.x + self.radius < 0:
             return True
-        elif self.position.y - self.radius > screen_size.y:
+        elif self.position.y - self.radius > self.screen_size.y:
             return True
         elif self.position.y + self.radius < 0:
             return True
         return False
 
     def move(self, delta):
-        self.position += self.direction * self.speed * delta
+        self.position += self.direction.direction * self.speed * delta
         self.hitcircle.update_circle(self.position, self.radius)
 
-    def draw_coin(self, screen):
-        pygame.draw.circle(screen, self.color, self.position, self.radius)
+    def draw_coin(self):
+        pygame.draw.circle(self.screen, self.color, self.position, self.radius)
     
-    def __del__(self):
-        pass
+    def process(self, delta):
+        self.move(delta)
+        self.draw_coin()
 
+
+
+class FruitTypes(Enum):
+    APPLE = 0
+    BANANA = 1
+    CHERRY = 2
+    KIWI = 3
+    MELON = 4
+    ORANGE = 5
+    PINEAPPLE = 6
 
 class Fruit:
-    def __init__(self, fruit, screen_size):
-        self.animation = animation.Animation(fruit)
+    def __init__(self, screen, screen_size):
+        self.animation = self.make_animation()
         self.boundary = 50
-        self.counter = 0
-        self.frame = 0
         self.position = self.randomize_position(screen_size)
         self.center = pygame.Vector2(self.position.x + 32, self.position.y + 32)
 
@@ -100,14 +150,25 @@ class Fruit:
         position.x = random.randint(self.boundary, screen_size.x - self.boundary)
         position.y = random.randint(self.boundary, screen_size.y - self.boundary)
         return position
+    
+    def animate(self, delta) -> pygame.Surface:
+        return self.animation.animate(delta)
+    
+    def make_animation(self) -> animation.Animation:
+        animations = {
+        FruitTypes.APPLE: animation.AnimInfo("Apple.png", (17, 1)),
+        FruitTypes.BANANA: animation.AnimInfo("Bananas.png", (17, 1)),
+        FruitTypes.CHERRY: animation.AnimInfo("Cherries.png", (17, 1)),
+        FruitTypes.KIWI: animation.AnimInfo("Kiwi.png", (17, 1)),
+        FruitTypes.MELON: animation.AnimInfo("Melon.png", (17, 1)),
+        FruitTypes.ORANGE: animation.AnimInfo("Orange.png", (17, 1)),
+        FruitTypes.PINEAPPLE: animation.AnimInfo("Pineapple.png", (17, 1))
+        }
+        random.seed()
+        fruit = random.randint(0, 6)
+        anim_info = animations[FruitTypes(fruit)]
+        return animation.Animation(anim_info = anim_info)
+    
 
-    def animate(self, delta: float) -> pygame.Surface:
-        image = self.animation.get_image((self.frame, 0))
 
-        if self.counter * delta > 0.05:
-            self.counter = 0
-            self.frame += 1
-        if self.frame >= self.animation.anim_info.frame_count[0]:
-            self.frame = 0
-        self.counter += 1
-        return image
+#FruitTypes.COLLECTED: animation.AnimInfo("Collected.png", (6, 1))
